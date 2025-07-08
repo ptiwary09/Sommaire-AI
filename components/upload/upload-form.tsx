@@ -4,8 +4,9 @@ import { useUploadThing } from '@/utils/uploadthing';
 import UploadFormInput from './upload-form-input';
 import { z } from 'zod';
 import { toast } from 'sonner';
-import { generatePdfSummary } from '@/actions/upload-actions';
+import { generatePdfSummary, storePdfSummaryAction } from '@/actions/upload-actions';
 import { useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 const schema = z.object({
   file: z
@@ -17,6 +18,9 @@ const schema = z.object({
 export default function UploadForm() {
   const formRef = useRef<HTMLFormElement>(null);
   const [isLoading, setIsLoading] =useState(false);
+  const router = useRouter();
+
+
   const { startUpload, routeConfig } = useUploadThing('pdfUploader', {
     onClientUploadComplete: () => {
       console.log('uploaded successfully!');
@@ -81,6 +85,7 @@ const result = await generatePdfSummary(resp);
 
 const { data=null, message = null } = result || {};
 if(data) {
+  let storeResults: any;
   toast(
   <div>
    <p className="text-base font-bold">📄 Saving PDF...</p>
@@ -91,19 +96,36 @@ if(data) {
   </div>
 );
  
+
+
+ if(data.summary) {
+ storeResults=await storePdfSummaryAction({
+  summary: data.summary,
+  fileUrl:resp[0].serverData.file.url,
+  title: data.title,
+  fileName: file.name,
+ });
+ toast(
+  <div>
+   <p className="text-base font-bold">🌟 Summary Generated!</p>
+
+    <p className="text-sm text-muted-foreground">
+      Your PDF has been successfully summarized and saved!✨,
+    </p>
+  </div>
+);
+ 
 formRef.current?.reset();
-
- // if(data.summary) {
-
- // }
-
-
+// todo: redirect to the [id] summary page
+router.push(`/summaries/${storeResults.data.id}`);
 }
-  
-    } catch(error){
+}
+} catch(error) {
       setIsLoading(false);
       console.log('ErrorOccured',error);
       formRef.current?.reset();
+    } finally {
+      setIsLoading(false);
     }
   };
 
