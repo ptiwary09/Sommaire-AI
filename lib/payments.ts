@@ -1,5 +1,57 @@
 import Stripe from 'stripe';
 import { getDbConnection } from './db';
+// Add this to your webhook handler or create a separate monitoring endpoint
+
+// 1. Add webhook success/failure tracking
+export async function handleSubscriptionDeleted({
+    subscriptionId,
+    stripe,
+}: {
+    subscriptionId: string;
+    stripe: Stripe;
+}) {
+    console.log('Subscription deleted', subscriptionId);
+    
+    try {
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        console.log(' Retrieved subscription:', subscription.id);
+        console.log(' Customer ID:', subscription.customer);
+        
+        const sql = await getDbConnection();
+        console.log(' Database connection established');
+        
+        // First check if user exists
+        const userCheck = await sql`
+            SELECT customer_id, status FROM users 
+            WHERE customer_id = ${subscription.customer}
+        `;
+        console.log('🔍 User check result:', userCheck);
+        
+        if (userCheck.length === 0) {
+            console.log(' No user found with customer_id:', subscription.customer);
+            return;
+        }
+        
+        // Update user status
+        const updateResult = await sql`
+            UPDATE users 
+            SET status = 'cancelled' 
+            WHERE customer_id = ${subscription.customer}
+        `;
+        console.log('Update result:', updateResult);
+        
+        // Verify the update
+        const verifyResult = await sql`
+            SELECT customer_id, status FROM users 
+            WHERE customer_id = ${subscription.customer}
+        `;
+        console.log('✅ After update:', verifyResult[0]);
+        
+    } catch (error) {
+        console.error(' Error handling subscription deleted:', error);
+        throw error;
+    }
+}
 
 // Main webhook handler
 export async function handleCheckoutSessionCompleted({
@@ -9,47 +61,47 @@ export async function handleCheckoutSessionCompleted({
     session: Stripe.Checkout.Session;
     stripe: Stripe;
 }) {
-    console.log('🚨 WEBHOOK CALLED - Session ID:', session.id);
-    console.log('🚨 WEBHOOK CALLED - Session Status:', session.status);
-    console.log('🚨 WEBHOOK CALLED - Customer:', session.customer);
+    console.log(' WEBHOOK CALLED - Session ID:', session.id);
+    console.log(' WEBHOOK CALLED - Session Status:', session.status);
+    console.log(' WEBHOOK CALLED - Customer:', session.customer);
     
     try {
         // Check if we have required data
         const customerId = session.customer as string;
         if (!customerId) {
-            console.error('❌ No customer ID in session');
+            console.error(' No customer ID in session');
             return;
         }
         
-        console.log('📋 Retrieving customer from Stripe...');
+        console.log(' Retrieving customer from Stripe...');
         const customer = await stripe.customers.retrieve(customerId);
-        console.log('📋 Customer retrieved:', customer);
+        console.log('Customer retrieved:', customer);
         
         if (!customer || customer.deleted) {
-            console.error('❌ Customer not found or deleted');
+            console.error(' Customer not found or deleted');
             return;
         }
         
         if (!('email' in customer) || !customer.email) {
-            console.error('❌ Customer has no email');
+            console.error(' Customer has no email');
             return;
         }
         
         const priceId = session.line_items?.data[0]?.price?.id;
         if (!priceId) {
-            console.error('❌ No price ID found in session');
+            console.error('No price ID found in session');
             return;
         }
         
         const { email, name } = customer;
-        console.log('📋 Processing payment for:', { email, name, customerId, priceId });
+        console.log('Processing payment for:', { email, name, customerId, priceId });
         
         // Get database connection
         const sql = await getDbConnection();
-        console.log('📋 Database connection established');
+        console.log(' Database connection established');
         
         // Create or update user
-        console.log('📋 Creating/updating user...');
+        console.log('Creating/updating user...');
         const userId = await createOrUpdateUser({
             sql,
             email: email as string,
@@ -59,10 +111,10 @@ export async function handleCheckoutSessionCompleted({
             status: 'active',
         });
         
-        console.log('📋 User processed, ID:', userId);
+        console.log('User processed, ID:', userId);
         
         // Create payment record
-        console.log('📋 Creating payment record...');
+        console.log('Creating payment record...');
         await createPayment({
             sql,
             session,
@@ -70,12 +122,12 @@ export async function handleCheckoutSessionCompleted({
             userEmail: email as string,
         });
         
-        console.log('✅ Payment processing completed successfully');
+        console.log('Payment processing completed successfully');
         
     } catch (error) {
-        console.error('❌ Error in handleCheckoutSessionCompleted:', error);
+        console.error('Error in handleCheckoutSessionCompleted:', error);
         if (error instanceof Error) {
-            console.error('❌ Error stack:', error.stack);
+            console.error(' Error stack:', error.stack);
         }
         throw error;
     }
@@ -98,16 +150,16 @@ async function createOrUpdateUser({
     status: string;
 }) {
     try {
-        console.log('📋 Checking if user exists for email:', email);
+        console.log(' Checking if user exists for email:', email);
         
         const existingUser = await sql`
             SELECT id, email, customer_id FROM users WHERE email = ${email}
         `;
         
-        console.log('📋 User query result:', existingUser);
+        console.log(' User query result:', existingUser);
         
         if (existingUser.length === 0) {
-            console.log('📋 Creating new user...');
+            console.log(' Creating new user...');
             
             const newUser = await sql`
                 INSERT INTO users (email, full_name, customer_id, price_id, status)
@@ -115,11 +167,11 @@ async function createOrUpdateUser({
                 RETURNING id, email, customer_id
             `;
             
-            console.log('✅ New user created:', newUser[0]);
+            console.log(' New user created:', newUser[0]);
             return newUser[0].id;
             
         } else {
-            console.log('📋 User exists, updating...');
+            console.log(' User exists, updating...');
             
             const updatedUser = await sql`
                 UPDATE users 
@@ -133,13 +185,13 @@ async function createOrUpdateUser({
                 RETURNING id, email, customer_id
             `;
             
-            console.log('✅ User updated:', updatedUser[0]);
+            console.log(' User updated:', updatedUser[0]);
             return existingUser[0].id;
         }
         
     } catch (error) {
-        console.error('❌ Error in createOrUpdateUser:', error);
-        console.error('❌ User data:', { email, fullName, customerId, priceId, status });
+        console.error(' Error in createOrUpdateUser:', error);
+        console.error(' User data:', { email, fullName, customerId, priceId, status });
         throw error;
     }
 }
@@ -205,12 +257,12 @@ async function createPayment({
 // Test database connection and basic operations
 export async function testDatabaseConnection() {
     try {
-        console.log('🧪 Testing database connection...');
+        console.log(' Testing database connection...');
         const sql = await getDbConnection();
         
         // Test basic connectivity
         const result = await sql`SELECT NOW() as current_time`;
-        console.log('✅ Database connected at:', result[0].current_time);
+        console.log('Database connected at:', result[0].current_time);
         
         // Check table structures
         const userTable = await sql`
@@ -218,31 +270,31 @@ export async function testDatabaseConnection() {
             FROM information_schema.columns 
             WHERE table_name = 'users'
         `;
-        console.log('📋 Users table structure:', userTable);
+        console.log('Users table structure:', userTable);
         
         const paymentTable = await sql`
             SELECT column_name, data_type, is_nullable 
             FROM information_schema.columns 
             WHERE table_name = 'payments'
         `;
-        console.log('📋 Payments table structure:', paymentTable);
+        console.log(' Payments table structure:', paymentTable);
         
         // Count existing records
         const userCount = await sql`SELECT COUNT(*) as count FROM users`;
         const paymentCount = await sql`SELECT COUNT(*) as count FROM payments`;
         
-        console.log('📊 Current record counts:');
+        console.log(' Current record counts:');
         console.log('   Users:', userCount[0].count);
         console.log('   Payments:', paymentCount[0].count);
         
     } catch (error) {
-        console.error('❌ Database connection test failed:', error);
+        console.error('Database connection test failed:', error);
     }
 }
 
 // Test with mock data
 export async function testPaymentHandlerWithMockData() {
-    console.log('🧪 Testing payment handler with mock data...');
+    console.log(' Testing payment handler with mock data...');
     
     const mockSession: Stripe.Checkout.Session = {
         id: 'cs_test_mock_123',
@@ -261,7 +313,7 @@ export async function testPaymentHandlerWithMockData() {
     const mockStripe = {
         customers: {
             retrieve: async (customerId: string) => {
-                console.log('🧪 Mock retrieving customer:', customerId);
+                console.log(' Mock retrieving customer:', customerId);
                 return {
                     id: customerId,
                     email: 'test@example.com',
@@ -277,9 +329,9 @@ export async function testPaymentHandlerWithMockData() {
             session: mockSession,
             stripe: mockStripe
         });
-        console.log('✅ Mock test completed');
+        console.log(' Mock test completed');
     } catch (error) {
-        console.error('❌ Mock test failed:', error);
+        console.error('Mock test failed:', error);
     }
 }
 
@@ -291,12 +343,12 @@ export async function getUserData(email: string) {
         const user = await sql`SELECT * FROM users WHERE email = ${email}`;
         const payments = await sql`SELECT * FROM payments WHERE user_email = ${email}`;
         
-        console.log('📋 User data:', user[0] || 'Not found');
-        console.log('📋 User payments:', payments);
+        console.log(' User data:', user[0] || 'Not found');
+        console.log(' User payments:', payments);
         
         return { user: user[0], payments };
     } catch (error) {
-        console.error('❌ Error getting user data:', error);
+        console.error('Error getting user data:', error);
         return null;
     }
 }
@@ -309,8 +361,8 @@ export async function cleanupTestData() {
         await sql`DELETE FROM payments WHERE stripe_payment_id LIKE 'cs_test_%'`;
         await sql`DELETE FROM users WHERE email LIKE '%test%' OR email LIKE '%example%'`;
         
-        console.log('✅ Test data cleaned up');
+        console.log(' Test data cleaned up');
     } catch (error) {
-        console.error('❌ Error cleaning up test data:', error);
+        console.error(' Error cleaning up test data:', error);
     }
 }

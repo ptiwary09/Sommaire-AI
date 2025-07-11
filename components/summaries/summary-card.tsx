@@ -4,6 +4,8 @@ import Link from "next/link";
 import { FileText } from "lucide-react";
 import { cn, formatFileName} from "@/lib/utils";
 import { formatDistanceToNow } from 'date-fns';
+import { MotionDiv } from "../common/motion-wrapper";
+import { itemVariants } from "@/utils/constants";
 
 const SummaryHeader = ({
     fileUrl, title, createdAt,
@@ -47,6 +49,12 @@ export default function SummaryCard({ summary }: { summary: any }) {
   console.log("SummaryCard - summary keys:", Object.keys(summary || {}));
 
   return (
+    <MotionDiv
+    variants={itemVariants}
+    initial="hidden"
+    animate="visible" whileHover={{scale: 1.02,transition:{duration:0.2,ease:'easeOut'}}}>
+
+  
     <Card className="relative border border-gray-200 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 p-4 sm:p-6">
       {/* Top-right Delete Button */}
       <div className="absolute top-2 right-2">
@@ -71,5 +79,6 @@ export default function SummaryCard({ summary }: { summary: any }) {
         </div>
       </Link>
     </Card>
+     </MotionDiv>
   );
 }

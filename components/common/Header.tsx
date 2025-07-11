@@ -5,6 +5,7 @@ import NavLink from './nav-link';
 import { UserButton } from '@clerk/nextjs';
 import { SignedIn } from '@clerk/nextjs';
 import { SignedOut } from '@clerk/nextjs';
+import PlanBadge from './plan-badge';
 export default function Header() {
   const isLoggedIn = false;
   return ( 
@@ -34,7 +35,7 @@ export default function Header() {
         <SignedIn>
         <div className="flex gap-2 items-center">
           <NavLink href='/upload'>Upload a PDF</NavLink>
-          <div>Pro</div>
+          <PlanBadge />
           <SignedIn>
               <UserButton />
             </SignedIn>
